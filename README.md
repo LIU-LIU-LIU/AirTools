@@ -2,6 +2,15 @@
 
 Windows 桌面工具集，**单 exe 单进程**，一个托盘图标，一个开机自启注册表项。
 
+## 预览
+
+<img width="360" height="480" alt="PixPin_2026-02-14_16-07-46" src="https://github.com/user-attachments/assets/12f9d1e8-cb9d-48de-a17c-4d2dd782d097" />
+
+<img width="360" height="508" alt="PixPin_2026-02-14_16-08-20" src="https://github.com/user-attachments/assets/7d48e50b-8bc4-46bf-952e-a2ab459445d1" />
+
+<img width="480" height="640" alt="PixPin_2026-02-14_16-09-27" src="https://github.com/user-attachments/assets/88a29321-4ee7-41ad-a2d2-5ce5cc987985" />
+
+
 ## 架构
 
 ```
