@@ -30,9 +30,36 @@ namespace AirTools.Tools.SystemMonitor
         {
             Opacity = _settings.WindowOpacity;
             ApplyVisibility();
+            ApplyLayoutDensity();
             PositionWindow();
             _timer.Start();
             Timer_Tick(null!, EventArgs.Empty);
+        }
+
+        private void ApplyLayoutDensity()
+        {
+            var isRelaxed = _settings.LayoutDensity == "Relaxed";
+            // 紧凑: 更小内边距和间距; 宽松: 更大内边距和间距
+            MainBorder.Padding = isRelaxed ? new Thickness(8, 6, 8, 6) : new Thickness(4, 2, 4, 2);
+            var itemGapH = isRelaxed ? 14.0 : 6.0;   // 横向项间距
+            var itemGapV = isRelaxed ? 8.0 : 4.0;    // 竖向项间距
+            var netGapV = isRelaxed ? 6.0 : 2.0;     // 网络子项间距
+
+            // 竖向布局
+            GridCpuV.Margin = new Thickness(0, 0, 0, itemGapV);
+            GridMemV.Margin = new Thickness(0, 0, 0, itemGapV);
+            GridDiskV.Margin = new Thickness(0, 0, 0, itemGapV);
+            if (PanelNetV.Children.Count >= 2)
+            {
+                if (PanelNetV.Children[0] is FrameworkElement tb) tb.Margin = new Thickness(0, 0, 0, netGapV);
+                if (PanelNetV.Children[1] is FrameworkElement g1) g1.Margin = new Thickness(0, 0, 0, netGapV);
+            }
+
+            // 横向布局
+            var mH = new Thickness(0, 0, itemGapH, 0);
+            GridCpuH.Margin = mH;
+            GridMemH.Margin = mH;
+            GridDiskH.Margin = mH;
         }
 
         private void ApplyVisibility()
@@ -325,6 +352,7 @@ namespace AirTools.Tools.SystemMonitor
                 _monitor.NetworkAdapterId = s.NetworkAdapterId;
                 Opacity = s.WindowOpacity;
                 ApplyVisibility();
+                ApplyLayoutDensity();
                 PositionWindow();
             }) { Owner = this };
             settingsWin.ShowDialog();
