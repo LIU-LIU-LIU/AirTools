@@ -1,0 +1,14 @@
+# 构建产物
+bin/
+obj/
+dist/
+publish/
+publish-fxd/
+
+# Visual Studio
+.vs/
+*.user
+*.suo
+
+# Rider
+.idea/
