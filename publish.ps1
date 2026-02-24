@@ -9,6 +9,14 @@ param(
 $ErrorActionPreference = "Stop"
 $proj = "src/AirTools/AirTools.csproj"
 
+# 发布前结束可能占用 exe 的 AirTools 进程
+$procs = Get-Process -Name "AirTools" -ErrorAction SilentlyContinue
+if ($procs) {
+    Write-Host "正在结束运行中的 AirTools 进程..." -ForegroundColor Yellow
+    $procs | Stop-Process -Force
+    Start-Sleep -Seconds 1
+}
+
 if (-not $FrameworkDependentOnly) {
     Write-Host "发布自包含版 (dist/self-contained/) ..." -ForegroundColor Cyan
     dotnet publish $proj -c Release -o dist/self-contained
