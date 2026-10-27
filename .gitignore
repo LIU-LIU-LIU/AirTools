@@ -4,6 +4,7 @@ obj/
 dist/
 publish/
 publish-fxd/
+BundleArtifacts/
 
 # Visual Studio
 .vs/
