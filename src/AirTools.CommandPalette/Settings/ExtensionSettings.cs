@@ -50,21 +50,21 @@ internal sealed partial class TaskManagementSettingsPage : ContentPage
     {
         var content = new List<IContent>(_settings.Settings.ToContent())
         {
-            new MarkdownContent("## 快速任务\n\n在此新增、编辑或删除任务。任务只会在命令面板主页进入“AirTools 快速任务”后搜索和运行。"),
+            new MarkdownContent("## 快速任务\n\n管理可在“AirTools 快速任务”中搜索并运行的任务。"),
         };
         try
         {
             var reply = Task.Run(() => AgentClient.CallAsync(new("tasks.list"))).GetAwaiter().GetResult();
-            foreach (var task in AgentClient.Read<List<AirTools.Services.LaunchTask>>(reply))
-                content.Add(new TaskForm(task, Refresh, existing: true));
+            var tasks = AgentClient.Read<List<AirTools.Services.LaunchTask>>(reply);
+            if (tasks.Count == 0) content.Add(new MarkdownContent("还没有任务，使用下方“新增任务”创建。"));
+            foreach (var task in tasks) content.Add(new TaskForm(task, Refresh, existing: true));
             content.Add(new TaskForm(new AirTools.Services.LaunchTask(), Refresh));
         }
         catch (Exception ex) { content.Add(new MarkdownContent("无法读取任务：" + ex.Message)); }
-        content.Add(new MarkdownContent("## 关于\n\nAirTools · liu.liuy@qq.com\n\n[GitHub 项目](https://github.com/LIU-LIU-LIU/AirTools)"));
         content.Add(new BackgroundControlForm());
+        content.Add(new MarkdownContent("[https://github.com/LIU-LIU-LIU/AirTools](https://github.com/LIU-LIU-LIU/AirTools)"));
         return content.ToArray();
     }
-
     public void Refresh() => RaiseItemsChanged();
 }
 
@@ -79,3 +79,6 @@ internal sealed partial class BackgroundControlForm : FormContent
         catch (Exception ex) { return CommandResult.ShowToast(ex.Message); }
     }
 }
+
+
+

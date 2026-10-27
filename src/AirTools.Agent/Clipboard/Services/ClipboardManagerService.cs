@@ -67,8 +67,8 @@ namespace AirTools.Tools.Clipboard.Services
                     var thumbnail = new BitmapImage();
                     using var thumbnailStream = new MemoryStream(bytes);
                     thumbnail.BeginInit(); thumbnail.StreamSource = thumbnailStream; thumbnail.CacheOption = BitmapCacheOption.OnLoad;
-                    if (image.PixelWidth >= image.PixelHeight) thumbnail.DecodePixelWidth = Math.Min(280, image.PixelWidth);
-                    else thumbnail.DecodePixelHeight = Math.Min(280, image.PixelHeight);
+                    if (image.PixelWidth >= image.PixelHeight) thumbnail.DecodePixelWidth = Math.Min(640, image.PixelWidth);
+                    else thumbnail.DecodePixelHeight = Math.Min(640, image.PixelHeight);
                     thumbnail.EndInit(); thumbnail.Freeze();
                     item = new ClipboardItem
                     {
@@ -337,3 +337,5 @@ namespace AirTools.Tools.Clipboard.Services
         }
     }
 }
+
+

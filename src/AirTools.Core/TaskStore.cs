@@ -37,12 +37,30 @@ public sealed class LauncherSettings
     public List<LaunchTask> Tasks { get; set; } = [];
     public static string DataDirectory => AgentProtocol.DataDirectory;
     public static string SettingsPath => Path.Combine(DataDirectory, "launcher.json");
-    public static LauncherSettings Load() => File.Exists(SettingsPath)
+    public static LauncherSettings Load()
+    {
+        var settings = File.Exists(SettingsPath)
         ? JsonSerializer.Deserialize<LauncherSettings>(File.ReadAllText(SettingsPath)) ?? throw new IOException("任务配置无效")
-        : new() { Tasks = [
+        : new LauncherSettings { Tasks = [
             new() { Name = "Python VPN 监控", Alias = "vpn python", Kind = LaunchKind.Terminal, Executable = "python.exe", Arguments = [@".\adb_vpn_monitor.py"], WorkingDirectory = @"D:\Users\DELL\Desktop\android-work\QuasarVPN" },
             new() { Name = "Wireshark 远程抓包", Alias = "ssh wireshark", Kind = LaunchKind.SshCapture, Executable = @"C:\Program Files\Wireshark\Wireshark.exe" }
         ] };
+        var ids = new HashSet<Guid>();
+        var changed = false;
+        foreach (var task in settings.Tasks)
+            if (!Guid.TryParse(task.Id, out var id) || !ids.Add(id))
+            {
+                task.Id = Guid.NewGuid().ToString("N");
+                ids.Add(Guid.Parse(task.Id)); changed = true;
+            }
+        if (changed)
+        {
+            var backup = SettingsPath + ".id-migration-backup";
+            if (!File.Exists(backup)) File.Copy(SettingsPath, backup, overwrite: false);
+            settings.Save();
+        }
+        return settings;
+    }
     public void Save() => AtomicFile.Write(SettingsPath, JsonSerializer.Serialize(this, new JsonSerializerOptions { WriteIndented = true }));
 
     public static void Validate(LaunchTask task)

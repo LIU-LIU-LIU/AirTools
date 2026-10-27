@@ -17,7 +17,7 @@
 
   <Properties>
     <DisplayName>AirTools</DisplayName>
-    <PublisherDisplayName>liu.liuy@qq.com</PublisherDisplayName>
+    <PublisherDisplayName>剪切板管理与快速任务。快速任务请在命令面板主页进入“AirTools 快速任务”搜索并运行；任务的新增、编辑和删除在此设置页完成。</PublisherDisplayName>
     <Logo>Assets\StoreLogo.png</Logo>
   </Properties>
 
@@ -36,7 +36,7 @@
       EntryPoint="$targetentrypoint$">
       <uap:VisualElements
         DisplayName="AirTools"
-        Description="AirTools"
+        Description="剪切板管理与快速任务"
         BackgroundColor="transparent"
         Square150x150Logo="Assets\Square150x150Logo.png"
         Square44x44Logo="Assets\Square44x44Logo.png">
@@ -56,7 +56,7 @@
             Id="AirTools"
             PublicFolder="Public"
             DisplayName="AirTools"
-            Description="AirTools">
+            Description="剪切板管理与快速任务">
             <uap3:Properties>
               <CmdPalProvider>
                 <Activation>
@@ -78,3 +78,4 @@
     <rescap:Capability Name="runFullTrust" />
   </Capabilities>
 </Package>
+

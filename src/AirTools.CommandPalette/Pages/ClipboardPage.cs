@@ -41,14 +41,17 @@ internal sealed partial class ClipboardPage : DynamicListPage, IDisposable
     {
         var title = entry.Kind == "Image" ? "图片" : entry.Text.Replace('\n', ' ').Replace('\r', ' ');
         if (title.Length > 140) title = title[..140] + "…";
-        return new ListItem(new RemoteCommand("粘贴到原窗口", new("clipboard.paste", entry.Id), dismiss: true))
+        var openLink = _category == "Link" && entry.Kind == "Link";
+        return new ListItem(new RemoteCommand(openLink ? "用默认应用打开连接" : "粘贴到原窗口", new(openLink ? "clipboard.open" : "clipboard.paste", entry.Id), dismiss: true))
         {
             Title = title,
-            Subtitle = $"{(entry.Pinned ? "📌 · " : "")}{entry.Kind} · {entry.Time:g}",
+            Subtitle = $"{(entry.Pinned ? "📌 · " : "")}{(entry.Kind == "Link" ? "连接" : entry.Kind)} · {entry.Time:g}",
             Icon = new IconInfo(entry.Kind == "Image" ? "\uEB9F" : "\uE8A5"),
             Details = new Details { Title = entry.Kind, Body = entry.Kind == "Image" ? "上下文菜单 → 完整图片预览（缩放 / 拖动）" : entry.Text,
                 HeroImage = entry.Thumbnail.Length > 0 ? ImageIcon(entry.Thumbnail) : new IconInfo("") },
             MoreCommands = [
+                .. entry.Kind == "Link" ? new ICommandContextItem[] { new CommandContextItem(new RemoteCommand("用默认应用打开连接", new("clipboard.open", entry.Id), dismiss: true)) } : [],
+                .. openLink ? new ICommandContextItem[] { new CommandContextItem(new RemoteCommand("粘贴到原窗口", new("clipboard.paste", entry.Id), dismiss: true)) } : [],
                 new CommandContextItem(new RemoteCommand("仅复制", new("clipboard.copy", entry.Id), dismiss: true)) { RequestedShortcut = KeyChordHelpers.FromModifiers(ctrl: true, vkey: Windows.System.VirtualKey.Enter) },
                 new CommandContextItem(new RemoteCommand(entry.Pinned ? "取消置顶" : "置顶", new("clipboard.pin", entry.Id), Refresh)),
                 new CommandContextItem(new RemoteCommand("删除", new("clipboard.delete", entry.Id), Refresh)),
@@ -75,6 +78,6 @@ internal sealed partial class ClipboardFilters : Filters
     public ClipboardFilters() { CurrentFilterId = "all"; }
     public override IFilterItem[] GetFilters() => [
         new Filter { Id = "all", Name = "全部" }, new Filter { Id = "pinned", Name = "置顶" },
-        new Filter { Id = "Text", Name = "文本" }, new Filter { Id = "Image", Name = "图片" }, new Filter { Id = "Files", Name = "文件" },
+        new Filter { Id = "Text", Name = "文本" }, new Filter { Id = "Link", Name = "连接" }, new Filter { Id = "Image", Name = "图片" }, new Filter { Id = "Files", Name = "文件" },
     ];
 }

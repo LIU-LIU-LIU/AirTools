@@ -87,11 +87,16 @@ internal sealed class AgentHost : IDisposable
         {
             case "status": return new(true, _status, JsonSerializer.Serialize(_options));
             case "clipboard.list":
+                var thumbnailBudget = new[] { 3_400_000 };
                 var entries = _clipboard.Items.Select(x => (Item: x, Score: SearchRanking.Score(x.Text, request.Query)))
                     .Where(x => x.Score > 0).OrderByDescending(x => x.Item.IsPinned).ThenByDescending(x => x.Score).ThenByDescending(x => x.Item.CopyTime).Select(x => x.Item)
-                    .Where(x => request.Data is "" or "all" || request.Data == "pinned" && x.IsPinned || x.ItemType.ToString() == request.Data)
-                    .Take(50).Select(x => new ClipboardEntry(x.Id, x.Text.Length > 4000 ? x.Text[..4000] : x.Text, x.ItemType.ToString(), x.IsPinned, x.CopyTime, Thumbnail(x))).ToArray();
+                    .Where(x => request.Data is "" or "all" || request.Data == "pinned" && x.IsPinned || x.ItemType.ToString() == request.Data || request.Data == "Link" && IsLink(x))
+                    .Take(50).Select(x => new ClipboardEntry(x.Id, x.Text.Length > 4000 ? x.Text[..4000] : x.Text, IsLink(x) ? "Link" : x.ItemType.ToString(), x.IsPinned, x.CopyTime, Thumbnail(x, thumbnailBudget))).ToArray();
                 return new(true, _status, JsonSerializer.Serialize(entries));
+            case "clipboard.open":
+                if (item == null || !IsLink(item) || !ClipboardLink.TryParse(item.Text, out var uri)) return new(false, "请选择完整的协议连接");
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(uri.AbsoluteUri) { UseShellExecute = true });
+                return new(true, "已交给 Windows 默认应用打开");
             case "clipboard.copy":
             case "clipboard.paste":
                 if (item == null) return new(false, "历史项已不存在，请刷新");
@@ -170,13 +175,15 @@ internal sealed class AgentHost : IDisposable
         _status = "已复制，未确认原窗口焦点，请手动粘贴";
     }
 
-    private static string Thumbnail(ClipboardItem item)
+    private static bool IsLink(ClipboardItem item) => item.ItemType == ClipboardItemType.Text && ClipboardLink.TryParse(item.Text, out _);
+
+    private static string Thumbnail(ClipboardItem item, int[] budget)
     {
         if (item.ImageThumbnail == null) return "";
-        using var stream = new MemoryStream();
-        var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(item.ImageThumbnail)); encoder.Save(stream);
         // Keep a 50-item JSON response below the 4 MB IPC limit, including escaped text.
-        return stream.Length <= 16384 ? Convert.ToBase64String(stream.ToArray()) : "";
+        var encoded = item.EncodedThumbnail ??= Convert.ToBase64String(ClipboardThumbnail.Encode(item.ImageThumbnail));
+        if (encoded.Length > budget[0]) return "";
+        budget[0] -= encoded.Length; return encoded;
     }
 
     public void Dispose()
@@ -184,3 +191,6 @@ internal sealed class AgentHost : IDisposable
         _stop.Cancel(); _foreground.Dispose(); _monitor.Dispose(); _runner.Dispose(); _clipboard.Dispose(); _window.Close();
     }
 }
+
+
+

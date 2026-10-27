@@ -63,9 +63,33 @@ internal static class Program
         Check(AgentProtocol.ReadAsync<AgentRequest>(stream, default).GetAwaiter().GetResult().Operation == "status", "framed IPC roundtrip");
         var defaults = LauncherSettings.Load(); Check(defaults.Tasks.Count == 2, "two task presets"); defaults.Save();
         Check(LauncherSettings.Load().Tasks[0].WorkingDirectory.EndsWith("QuasarVPN", StringComparison.Ordinal), "working directory preserved");
+        var preserved = new LaunchTask { Id = "python-test", Name = "legacy", Executable = "python.exe", Arguments = ["a b"], EncryptedPassword = "opaque", Fingerprint = "trusted", WorkingDirectory = root };
+        new LauncherSettings { Tasks = [preserved, new LaunchTask { Id = "python-test", Executable = "cmd.exe" }] }.Save();
+        var migrated = LauncherSettings.Load();
+        Check(migrated.Tasks.All(x => Guid.TryParse(x.Id, out _)) && migrated.Tasks.Select(x => x.Id).Distinct().Count() == 2, "legacy and duplicate IDs become unique GUIDs");
+        Check(migrated.Tasks[0].EncryptedPassword == "opaque" && migrated.Tasks[0].Fingerprint == "trusted" && migrated.Tasks[0].Arguments[0] == "a b" && migrated.Tasks[0].WorkingDirectory == root, "ID migration preserves task configuration and credentials");
+        Check(File.ReadAllText(LauncherSettings.SettingsPath + ".id-migration-backup").Contains("python-test"), "ID migration backs up original configuration");
+        Check(LauncherSettings.Load().Tasks[0].Id == migrated.Tasks[0].Id, "ID migration is idempotent");
+        foreach (var link in new[] { "https://example.com/a?q=中文", "http://localhost:8080", "ftp://192.168.1.1", "custom-protocol://resource", "  https://example.com  " })
+            Check(ClipboardLink.TryParse(link, out _), "protocol link recognized " + link);
+        foreach (var value in new[] { "text https://example.com", "https://example.com\nother", @"C:\folder\file", "javascript:alert(1)", "ftp\\://host", "https://" })
+            Check(!ClipboardLink.TryParse(value, out _), "non-link rejected " + value);
     }
     private static void ImageTests()
     {
+        var noise = new byte[600 * 600 * 4];
+        new Random(42).NextBytes(noise);
+        var detailed = BitmapSource.Create(600, 600, 96, 96, PixelFormats.Bgra32, null, noise, 600 * 4);
+        using var original = new MemoryStream();
+        var originalEncoder = new PngBitmapEncoder(); originalEncoder.Frames.Add(BitmapFrame.Create(detailed)); originalEncoder.Save(original);
+        Check(original.Length > ClipboardThumbnail.MaximumBytes, "detailed PNG reproduces former missing-preview threshold");
+        var encoded = ClipboardThumbnail.Encode(detailed);
+        Check(encoded.Length > 0 && encoded.Length <= ClipboardThumbnail.MaximumBytes, "detailed preview scales to bounded nonempty PNG");
+        using var previewStream = new MemoryStream(encoded);
+        var preview = BitmapFrame.Create(previewStream, BitmapCreateOptions.PreservePixelFormat, BitmapCacheOption.OnLoad);
+        Check(preview.PixelWidth > 0 && preview.PixelWidth < 600 && preview.Format == PixelFormats.Bgra32, "reduced preview decodes and preserves alpha");
+        var tiny = BitmapSource.Create(1, 1, 192, 192, PixelFormats.Bgra32, null, new byte[4], 4);
+        Check(ClipboardThumbnail.Encode(tiny).Length > 0, "transparent single-pixel thumbnail remains available");
         using var service = new ClipboardManagerService();
         Check(!service.CopyToClipboardAsync(new ClipboardItem { ItemType = ClipboardItemType.Files, FilePaths = null }).GetAwaiter().GetResult(), "invalid file history cannot report successful copy");
         foreach (var size in new[] { (4000, 2000, 96d), (300, 10000, 144d), (100, 100, 192d) })
@@ -105,7 +129,7 @@ internal static class Program
     {
         AtomicFile.Write(Path.Combine(root, ".imported"), "test");
         Directory.CreateDirectory(Path.Combine(root, "Clipboard"));
-        AtomicFile.Write(Path.Combine(root, "Clipboard", "history.json"), "[{\"Id\":\"seed\",\"ItemType\":0,\"Text\":\"测试历史\",\"IsPinned\":true}]");
+        AtomicFile.Write(Path.Combine(root, "Clipboard", "history.json"), "[{\"Id\":\"seed\",\"ItemType\":0,\"Text\":\"测试历史\",\"IsPinned\":true},{\"Id\":\"link\",\"ItemType\":0,\"Text\":\"https://example.com\"}]");
         var cold = Stopwatch.StartNew();
         using var process = Process.Start(new ProcessStartInfo(Path.GetFullPath(executable)) { UseShellExecute = false })!;
         try
@@ -114,9 +138,13 @@ internal static class Program
             Console.WriteLine($"METRIC Agent cold start + first IPC: {cold.Elapsed.TotalMilliseconds:F1} ms");
             var history = await AgentProtocol.SendAsync(new("clipboard.list")); Check(history.Data.Contains("seed"), "Agent loads migrated history");
             var bad = await AgentProtocol.SendAsync(new("clipboard.paste", "missing")); Check(!bad.Success, "missing item cannot copy or send paste");
+            var links = JsonSerializer.Deserialize<ClipboardEntry[]>((await AgentProtocol.SendAsync(new("clipboard.list", Data: "Link"))).Data)!;
+            Check(links.Length == 1 && links[0].Id == "link" && links[0].Kind == "Link", "link filter classifies existing text history");
+            Check(!(await AgentProtocol.SendAsync(new("clipboard.open", "seed"))).Success, "ordinary text cannot launch a protocol handler");
             var task = new LaunchTask { Name = "integration task", Executable = "cmd.exe", Arguments = ["/c", "exit", "0"], WorkingDirectory = root };
             Check((await AgentProtocol.SendAsync(new("tasks.save", Data: JsonSerializer.Serialize(task)))).Success, "task CRUD save");
             Check((await AgentProtocol.SendAsync(new("tasks.list"))).Data.Contains("integration task"), "task CRUD list");
+            Check((await AgentProtocol.SendAsync(new("tasks.run", task.Id))).Success, "saved task starts with valid ID");
             Check((await AgentProtocol.SendAsync(new("tasks.delete", task.Id))).Success, "task CRUD delete");
             Check(!(await AgentProtocol.SendAsync(new("tasks.list"))).Data.Contains("integration task"), "task deleted from results");
             Check((await AgentProtocol.SendAsync(new("options", Data: JsonSerializer.Serialize(new AgentOptions(false, 100))))).Success, "pause recording through settings");
@@ -141,3 +169,4 @@ internal static class Program
         finally { await AgentProtocol.SendAsync(new("shutdown")); Check(process.WaitForExit(5000), "Agent shuts down cleanly"); }
     }
 }
+

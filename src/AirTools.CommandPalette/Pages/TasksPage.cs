@@ -27,16 +27,16 @@ internal sealed partial class TasksPage : DynamicListPage, IDisposable
             var reply = await AgentClient.CallAsync(new("tasks.list"), token);
             var tasks = AgentClient.Read<List<LaunchTask>>(reply);
             if (token.IsCancellationRequested) return;
-            var items = tasks.Select(x => (Task: x, Score: SearchRanking.Score(x.Name + " " + x.Alias, query))).Where(x => x.Score > 0).OrderByDescending(x => x.Score).Take(50).Select(x => Entry(x.Task))
-                .Append(new ListItem(new ActionCommand("刷新", Refresh)) { Title = "刷新任务及运行状态", Subtitle = reply.Message }).ToArray();
-            _query.TryPublish(token, () => { _items = items; RaiseItemsChanged(); });
+            var items = tasks.Select(x => (Task: x, Score: SearchRanking.Score(x.Name + " " + x.Alias, query))).Where(x => x.Score > 0 || string.IsNullOrWhiteSpace(query)).OrderByDescending(x => x.Score).Take(50).Select(x => Entry(x.Task)).ToList();
+            if (items.Count == 0) items.Add(new ListItem(new ActionCommand("刷新", Refresh)) { Title = string.IsNullOrWhiteSpace(query) ? "还没有任务" : "没有匹配的任务", Subtitle = "新增或编辑任务：命令面板设置 → 扩展 → AirTools", Icon = new IconInfo("\uE946") });
+            _query.TryPublish(token, () => { _items = items.ToArray(); RaiseItemsChanged(); });
         }
         catch (OperationCanceledException) { }
         catch (Exception ex) { _query.TryPublish(token, () => { _items = [new ListItem(new ActionCommand("重试", Refresh)) { Title = "无法读取任务", Subtitle = ex.Message }]; RaiseItemsChanged(); }); }
     }
-    private static ListItem Entry(LaunchTask task) => new ListItem(new RemoteCommand("运行", new("tasks.run", task.Id), dismiss: true))
+    private ListItem Entry(LaunchTask task) => new ListItem(new RemoteCommand("运行", new("tasks.run", task.Id), dismiss: true))
     {
-        Title = task.Name, Subtitle = $"{task.Kind} · {task.Alias}", Icon = new IconInfo("\uE945"),
+        Title = task.Name, Subtitle = string.IsNullOrWhiteSpace(task.Alias) ? TaskForm.KindName(task.Kind) : $"{TaskForm.KindName(task.Kind)} · {task.Alias}", Icon = new IconInfo("\uE945"),
         MoreCommands = [
             new CommandContextItem(new RemoteCommand("测试 SSH 连接", new("tasks.test", task.Id))),
             new CommandContextItem(new RemoteCommand("停止抓包 / 解除终端等待", new("tasks.stop", task.Id))),
@@ -56,3 +56,4 @@ internal sealed partial class LogPage : ContentPage
         catch (Exception ex) { return [new MarkdownContent(ex.Message)]; }
     }
 }
+
