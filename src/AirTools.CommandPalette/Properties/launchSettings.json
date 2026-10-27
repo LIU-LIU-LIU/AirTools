@@ -1,0 +1,11 @@
+{
+  "profiles": {
+    "AirTools.CommandPalette (Package)": {
+      "commandName": "MsixPackage",
+      "doNotLaunchApp": true
+    },
+    "AirTools.CommandPalette (Unpackaged)": {
+      "commandName": "Project"
+    }
+  }
+}
