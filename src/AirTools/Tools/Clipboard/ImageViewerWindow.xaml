@@ -8,6 +8,7 @@
         Background="Transparent"
         FontFamily="Microsoft YaHei UI, Segoe UI"
         WindowStyle="None"
+        ResizeMode="CanResizeWithGrip"
         AllowsTransparency="True"
         KeyDown="Window_KeyDown">
 
@@ -67,12 +68,14 @@
             <Border Grid.Row="1" x:Name="CanvasHost" Background="{DynamicResource CanvasBg}" ClipToBounds="True" CornerRadius="0,0,10,10"
                     MouseWheel="CanvasHost_MouseWheel" MouseLeftButtonDown="CanvasHost_MouseLeftButtonDown"
                     MouseLeftButtonUp="CanvasHost_MouseLeftButtonUp" MouseMove="CanvasHost_MouseMove" SizeChanged="CanvasHost_SizeChanged">
-                <Image x:Name="ImgPreview" Stretch="None" RenderOptions.BitmapScalingMode="HighQuality" SnapsToDevicePixels="True"
+                <Canvas ClipToBounds="True">
+                <Image x:Name="ImgPreview" Stretch="Fill" RenderOptions.BitmapScalingMode="HighQuality" SnapsToDevicePixels="True"
                        HorizontalAlignment="Left" VerticalAlignment="Top">
                     <Image.RenderTransform>
                         <MatrixTransform x:Name="ImageTransform"/>
                     </Image.RenderTransform>
                 </Image>
+                </Canvas>
             </Border>
         </Grid>
     </Border>

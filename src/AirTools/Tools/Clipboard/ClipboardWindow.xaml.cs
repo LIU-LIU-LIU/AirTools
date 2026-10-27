@@ -29,6 +29,7 @@ namespace AirTools.Tools.Clipboard
 
             _refreshTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(30) };
             _refreshTimer.Tick += (s, e) => RefreshList();
+            IsVisibleChanged += (_, _) => { if (IsVisible) _refreshTimer.Start(); else _refreshTimer.Stop(); };
         }
 
         private void Window_Loaded(object sender, RoutedEventArgs e)
@@ -75,17 +76,21 @@ namespace AirTools.Tools.Clipboard
             RefreshList();
         }
 
-        private void LstClipboard_MouseDoubleClick(object sender, MouseButtonEventArgs e)
+        private async void LstClipboard_MouseDoubleClick(object sender, MouseButtonEventArgs e)
         {
             if (LstClipboard.SelectedItem is ClipboardItem item)
             {
                 if (item.ItemType == ClipboardItemType.Image && item.ImageThumbnail != null)
                 {
-                    new ImageViewerWindow(item.ImageThumbnail) { Owner = this }.ShowDialog();
+                    var image = _clipManager.GetImage(item);
+                    if (image != null) new ImageViewerWindow(image) { Owner = this }.ShowDialog();
                     return;
                 }
                 if (_previousForegroundHwnd != IntPtr.Zero)
-                    PasteHelper.PasteToTarget(this, _previousForegroundHwnd, () => _clipManager.CopyToClipboard(item));
+                {
+                    var error = await PasteHelper.PasteToTargetAsync(this, _previousForegroundHwnd, () => _clipManager.CopyToClipboardAsync(item));
+                    if (error != null) MessageBox.Show(error, "AirTools");
+                }
                 else
                     _clipManager.CopyToClipboard(item);
                 UpdateStatus($"已粘贴: {item.PreviewText[..Math.Min(30, item.PreviewText.Length)]}...");
@@ -150,6 +155,7 @@ namespace AirTools.Tools.Clipboard
 
         private void BtnSettings_Click(object sender, RoutedEventArgs e)
         {
+            if (Application.Current is App app) { app.ShowLauncherSettings(); return; }
             var settingsWin = new ClipboardSettingsWindow(_appSettings, s =>
             {
                 _appSettings = s;
@@ -178,7 +184,13 @@ namespace AirTools.Tools.Clipboard
             };
 
             var list = items.ToList();
-            LstClipboard.ItemsSource = list;
+            var selected = LstClipboard.SelectedItem;
+            if (LstClipboard.ItemsSource is not System.Collections.ObjectModel.ObservableCollection<ClipboardItem> visible)
+            { visible = new(); LstClipboard.ItemsSource = visible; }
+            for (int i = visible.Count - 1; i >= 0; i--) if (!list.Contains(visible[i])) visible.RemoveAt(i);
+            for (int i = 0; i < list.Count; i++) { int old = visible.IndexOf(list[i]); if (old < 0) visible.Insert(i, list[i]); else if (old != i) visible.Move(old, i); }
+            if (selected != null && visible.Contains((ClipboardItem)selected)) LstClipboard.SelectedItem = selected;
+            else if (visible.Count > 0) LstClipboard.SelectedIndex = 0;
             EmptyState.Visibility = list.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
             LstClipboard.Visibility = list.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
             TxtCount.Text = $"共 {_clipManager.Items.Count} 条 · 置顶 {_clipManager.Items.Count(x => x.IsPinned)} 条";

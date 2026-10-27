@@ -66,7 +66,6 @@ namespace AirTools.Tools.Clipboard.Services
             if (_hwnd != IntPtr.Zero)
                 RemoveClipboardFormatListener(_hwnd);
             _hwndSource?.RemoveHook(WndProc);
-            _hwndSource?.Dispose();
         }
     }
 }

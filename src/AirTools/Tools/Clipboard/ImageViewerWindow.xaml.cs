@@ -17,11 +17,15 @@ namespace AirTools.Tools.Clipboard
         private Point _dragStart;
         private double _dragStartTx;
         private double _dragStartTy;
+        private bool _fitMode = true;
 
         public ImageViewerWindow(BitmapSource image)
         {
             InitializeComponent();
             ImgPreview.Source = image;
+            ImgPreview.Width = image.PixelWidth;
+            ImgPreview.Height = image.PixelHeight;
+            CanvasHost.LostMouseCapture += (_, _) => { _isDragging = false; CanvasHost.Cursor = Cursors.Arrow; };
             Loaded += (_, _) => FitToWindow();
         }
 
@@ -91,10 +95,15 @@ namespace AirTools.Tools.Clipboard
             ApplyTransform();
         }
 
-        private void CanvasHost_SizeChanged(object sender, SizeChangedEventArgs e) => CenterImage();
+        private void CanvasHost_SizeChanged(object sender, SizeChangedEventArgs e)
+        {
+            if (_fitMode) FitToWindow();
+            else { _translateX += (e.NewSize.Width - e.PreviousSize.Width) / 2; _translateY += (e.NewSize.Height - e.PreviousSize.Height) / 2; ApplyTransform(); }
+        }
 
         private void ZoomAroundPoint(double factor, Point viewportPoint)
         {
+            _fitMode = false;
             var newScale = Math.Clamp(_scale * factor, MinScale, MaxScale);
             if (Math.Abs(newScale - _scale) < 1e-9) return;
             var imageX = (viewportPoint.X - _translateX) / _scale;
@@ -111,10 +120,11 @@ namespace AirTools.Tools.Clipboard
             ZoomAroundPoint(factor, center);
         }
 
-        private void ResetView() { _scale = 1.0; CenterImage(); }
+        private void ResetView() { _fitMode = false; _scale = 1.0 / VisualTreeHelper.GetDpi(this).DpiScaleX; CenterImage(); }
 
         private void FitToWindow()
         {
+            _fitMode = true;
             if (ImgPreview.Source is not BitmapSource bmp) return;
             var cw = CanvasHost.ActualWidth;
             var ch = CanvasHost.ActualHeight;
@@ -122,7 +132,7 @@ namespace AirTools.Tools.Clipboard
             var scaleX = cw / bmp.PixelWidth;
             var scaleY = ch / bmp.PixelHeight;
             _scale = Math.Min(scaleX, scaleY) * 0.92;
-            _scale = Math.Clamp(_scale, MinScale, MaxScale);
+            _scale = Math.Min(_scale, MaxScale);
             CenterImage();
         }
 
@@ -146,7 +156,7 @@ namespace AirTools.Tools.Clipboard
             matrix.OffsetX = _translateX;
             matrix.OffsetY = _translateY;
             ImageTransform.Matrix = matrix;
-            TxtZoom.Text = $"{_scale * 100:0}%";
+            TxtZoom.Text = $"{_scale * VisualTreeHelper.GetDpi(this).DpiScaleX * 100:0}%";
         }
 
         private void Window_KeyDown(object sender, KeyEventArgs e)

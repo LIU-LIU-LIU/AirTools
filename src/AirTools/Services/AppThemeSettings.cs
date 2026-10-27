@@ -38,7 +38,7 @@ namespace AirTools.Services
 
         private static string GetSettingsPath()
         {
-            var appData = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "AirTools");
+            var appData = LauncherSettings.DataDirectory;
             return Path.Combine(appData, "settings.json");
         }
     }

@@ -52,6 +52,7 @@ namespace AirTools.Tools.Clipboard.Models
             if (CtrlModifier) parts.Add("Ctrl");
             if (ShiftModifier) parts.Add("Shift");
             if (AltModifier) parts.Add("Alt");
+            if (WinModifier) parts.Add("Win");
             parts.Add(HotkeyChar.ToUpperInvariant());
             return string.Join("+", parts);
         }
@@ -62,14 +63,16 @@ namespace AirTools.Tools.Clipboard.Models
             if (CtrlModifier) mod |= HotkeyManager.MOD_CONTROL;
             if (ShiftModifier) mod |= HotkeyManager.MOD_SHIFT;
             if (AltModifier) mod |= HotkeyManager.MOD_ALT;
+            if (WinModifier) mod |= HotkeyManager.MOD_WIN;
             return mod;
         }
 
         public uint GetVirtualKey()
         {
             if (string.IsNullOrEmpty(HotkeyChar)) return HotkeyManager.VK_V;
-            var c = char.ToUpperInvariant(HotkeyChar[0]);
-            return (uint)c;
+            try { return ServicesKey(HotkeyChar); }
+            catch { return HotkeyManager.VK_V; }
         }
+        private static uint ServicesKey(string key) => AirTools.Services.HotkeyParser.Parse("Ctrl+" + (key == " " ? "Space" : key)).Key;
     }
 }

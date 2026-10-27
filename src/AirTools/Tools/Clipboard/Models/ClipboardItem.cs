@@ -20,6 +20,7 @@ namespace AirTools.Tools.Clipboard.Models
         }
 
         public BitmapSource? ImageThumbnail { get; set; }
+        public byte[]? ImageData { get; set; }
         public string[]? FilePaths { get; set; }
         public DateTime CopyTime { get; set; } = DateTime.Now;
 

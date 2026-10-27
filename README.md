@@ -2,6 +2,12 @@
 
 Windows 桌面工具集，**单 exe 单进程**，一个托盘图标，一个开机自启注册表项。
 
+新版以搜索框为主入口：默认 **Ctrl+Space** 唤出，空输入时按 **c** 搜索剪切板，按 **f** 搜索常用目录。上下键选择，Enter 执行；剪切板模式 Enter 复制并粘贴，Ctrl+Enter 仅复制，Ctrl+P 预览图片。
+
+托盘的「设置与快速启动」可编辑程序、终端、PowerShell 和 SSH 抓包任务。程序参数每行一个，终端中文输出统一 UTF-8。系统监控本轮保持现状。
+
+发布版使用 `dist/framework-dependent/AirTools.exe`（需要 .NET 8 Desktop Runtime）或 `dist/self-contained/AirTools.exe`（自带运行时）。执行 `--settings` 打开设置，`--search` 打开搜索框。验证结果和已知限制见 [VALIDATION.md](VALIDATION.md)。
+
 ## 预览
 
 <img width="360" height="480" alt="PixPin_2026-02-14_16-07-46" src="https://github.com/user-attachments/assets/12f9d1e8-cb9d-48de-a17c-4d2dd782d097" />
