@@ -1,113 +1,103 @@
-# Air Tools
+<div align="center">
 
-Windows 桌面工具集，**单 exe 单进程**，一个托盘图标，一个开机自启注册表项。
+<img src="src/AirTools/Assets/AirTools-512.png" width="96" alt="AirTools" />
 
-新版以搜索框为主入口：默认 **Ctrl+Space** 唤出，空输入时按 **c** 搜索剪切板，按 **f** 搜索常用目录。上下键选择，Enter 执行；剪切板模式 Enter 复制并粘贴，Ctrl+Enter 仅复制，Ctrl+P 预览图片。
+# AirTools
 
-托盘的「设置与快速启动」可编辑程序、终端、PowerShell 和 SSH 抓包任务。程序参数每行一个，终端中文输出统一 UTF-8。系统监控本轮保持现状。
+**Windows 剪切板历史 · 晾衣架 · 快速命令 · 资源监控 —— 一个托盘程序，都在手边。**
 
-发布版使用 `dist/framework-dependent/AirTools.exe`（需要 .NET 8 Desktop Runtime）或 `dist/self-contained/AirTools.exe`（自带运行时）。执行 `--settings` 打开设置，`--search` 打开搜索框。验证结果和已知限制见 [VALIDATION.md](VALIDATION.md)。
+[![Build](https://github.com/LIU-LIU-LIU/AirTools/actions/workflows/build.yml/badge.svg)](https://github.com/LIU-LIU-LIU/AirTools/actions/workflows/build.yml)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-0078D4)
 
-## 预览
+</div>
 
-<img width="360" height="480" alt="PixPin_2026-02-14_16-07-46" src="https://github.com/user-attachments/assets/12f9d1e8-cb9d-48de-a17c-4d2dd782d097" />
+![AirTools 主页](docs/images-home.png)
 
-<img width="360" height="508" alt="PixPin_2026-02-14_16-08-20" src="https://github.com/user-attachments/assets/7d48e50b-8bc4-46bf-952e-a2ab459445d1" />
+## 它能做什么
 
-<img width="480" height="640" alt="PixPin_2026-02-14_16-09-27" src="https://github.com/user-attachments/assets/88a29321-4ee7-41ad-a2d2-5ce5cc987985" />
+| | |
+| --- | --- |
+| **晾衣架** | 最近复制的文字收在屏幕角落的一枚小按钮里。鼠标靠近，卡片沿弧线像 Dock 一样展开，点一下就粘贴到当前输入窗口，**不会抢走焦点**。可固定常用条目、拖动换位置、一键收起。 |
+| **剪切板历史** | 文本、图片、文件统一记录，搜索、置顶、清理；条数、保留时长、是否记录图片/文件都可设置，也能随时暂停记录。 |
+| **搜索启动器** | 一个快捷键唤出搜索栏：按名称或别名运行**快速命令**（程序、终端命令、PowerShell 脚本、SSH 远程抓包），或输入模式键搜索剪切板。 |
+| **系统监控** | 置顶的小条，显示 CPU、内存、磁盘与网络速率；可拖动，自动吸附到屏幕边角（按住 Shift / Ctrl 不吸附）。 |
+| **命令面板扩展** | 可选：安装到 PowerToys 命令面板，在里面直接搜索快速命令和剪切板历史。 |
 
+![晾衣架与设置](docs/images-rack-settings.png)
 
-## 架构
+## 安装
 
+1. 到 [Releases](https://github.com/LIU-LIU-LIU/AirTools/releases) 下载 `AirTools-<版本>-win-x64.zip`，解压到任意目录。
+2. 运行 `AirTools.exe`。自包含，**无需安装 .NET**。程序常驻系统托盘，右键托盘图标打开设置。
+3. 想开机自启：设置 → 常规 → 开机自动启动。
+
+系统要求：Windows 10 / 11（x64）。
+
+### 安装命令面板扩展（可选）
+
+需要已安装 [PowerToys](https://learn.microsoft.com/windows/powertoys/) 的命令面板，并开启 Windows“开发人员模式”（设置 → 系统 → 开发者选项）。然后：
+
+> AirTools 设置 → **命令面板** → **安装到命令面板**
+
+扩展包随 zip 一起提供（`AirTools-Extension-x64.zip`），没有时会自动从 Releases 下载。安装后在命令面板里执行一次 Reload，输入 `AirTools` 即可。扩展只是入口：它不保存任何数据，也不带后台进程，AirTools 需要保持运行。
+
+## 默认快捷键
+
+所有快捷键都可以在设置里重新录制或清除。
+
+| 操作 | 快捷键 |
+| --- | --- |
+| 打开搜索启动器 | `Ctrl+Space` |
+| 剪切板历史 | `Ctrl+Shift+V` |
+| 显示 / 隐藏晾衣架 | `Ctrl+Alt+R` |
+| 粘贴晾衣架第 1–5 件（1 为最新） | `Ctrl+Alt+1` … `Ctrl+Alt+5` |
+
+## 使用小技巧
+
+- **晾衣架**：单击角落按钮收起 / 展开；右键卡片可固定、取下；拖动按钮到屏幕任意位置，卡片会自动朝屏幕内侧展开。
+- **搜索启动器**：空输入框里输入模式键（默认 `c`）进入剪切板搜索；`Ctrl+Enter` 仅复制，`Ctrl+P` 预览图片。
+- **快速命令**：设置 → 快速启动里新增任务，可设置别名、独立快捷键；“结束运行”会结束任务启动的所有进程。
+
+## 数据与隐私
+
+- 配置：`%LOCALAPPDATA%\AirTools\launcher.json`；历史：`%LOCALAPPDATA%\AirTools\Clipboard\history.json`。设置 → 常规可以直接打开数据目录。
+- 图片历史只保存在内存中，不写入磁盘。SSH 密码使用当前 Windows 用户的 DPAPI 加密。
+- 程序不联网，只有点击“安装到命令面板”且本地没有扩展包时才会访问 GitHub Releases。
+
+## 从源码构建
+
+需要 Windows、.NET 8 SDK、PowerShell 7；构建命令面板扩展还需要 .NET 10 SDK。
+
+```powershell
+dotnet build AirTools.sln -c Release   # 构建
+./scripts/test.ps1                      # 测试（使用临时数据目录）
+./publish.ps1 -SelfContainedOnly        # 发布到 dist/self-contained/AirTools.exe
+./scripts/package-extension.ps1         # 打包命令面板扩展到 dist/release/
+./scripts/build-extension.ps1 -Register # 本地构建并以开发模式注册扩展
+./scripts/make-icon.ps1                 # 重新生成图标
 ```
-AirTools.exe（唯一进程）
-├── 主窗口：工具列表
-├── 剪切板管理器窗口
-├── 系统资源监控窗口
-└── 托盘图标（一个）
-```
+
+推送 `v*` 标签（如 `v1.0.0`）时，GitHub Actions 会自动构建、测试并把压缩包发布到 Releases。
 
 ## 目录结构
 
 ```
-AirTools/
-├── AirTools.sln
-└── src/
-    └── AirTools/
-        ├── App.xaml
-        ├── MainWindow.xaml           # 工具列表
-        ├── SettingsWindow.xaml       # 开机自启设置
-        ├── Services/
-        │   └── StartupService.cs
-        └── Tools/
-            ├── Clipboard/            # 剪切板模块
-            │   ├── ClipboardWindow.xaml
-            │   ├── ClipboardSettingsWindow.xaml
-            │   ├── ImageViewerWindow.xaml
-            │   └── Services/
-            └── SystemMonitor/        # 系统监控模块
-                ├── MonitorWindow.xaml
-                └── MonitorSettingsWindow.xaml
+src/AirTools/                主程序（WPF + Win32）
+  Services/                  应用宿主、快捷键、任务运行器、命令面板管道与安装器
+  Tools/Clipboard/           剪切板历史与晾衣架
+  Tools/SystemMonitor/       资源监控
+src/AirTools.Core/           主程序与扩展共用的协议
+src/AirTools.CommandPalette/ PowerToys 命令面板扩展（独立版的客户端）
+tests/AirTools.Tests/        自动化测试
+scripts/                     测试、打包、图标脚本
+docs/                        截图与设计文档
 ```
 
-## 功能
+设计与现状见 [docs/PLAN.md](docs/PLAN.md)，开发交接见 [docs/HANDOFF.md](docs/HANDOFF.md)，验证记录见 [VALIDATION.md](VALIDATION.md)。
 
-- **剪切板管理器**：历史记录、置顶、搜索、快捷键唤出（默认 Ctrl+Shift+V）
-- **系统资源监控**：CPU、内存、磁盘、网络，可配置刷新间隔、位置、透明度
-- **开机自启**：仅注册 AirTools，所有工具随主程序启动
+## 许可证
 
-## 构建与发布
+[Apache-2.0](LICENSE)。第三方组件及许可证见 [NOTICE](NOTICE)、[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) 与 [licenses/](licenses)。
 
-### 构建输出位置
-
-- **Debug**：`src/AirTools/bin/Debug/net8.0-windows/AirTools.exe`
-- **Release**：`src/AirTools/bin/Release/net8.0-windows/AirTools.exe`
-
-### 本地构建
-
-```powershell
-cd AirTools
-dotnet build AirTools.sln
-```
-
-### 发布版本（统一输出到 dist/）
-
-所有发布产物统一输出到 `dist/` 目录：
-
-```
-dist/
-├── self-contained/      # 自包含版 ~63MB，单 exe 即可运行
-│   └── AirTools.exe
-└── framework-dependent/ # 框架依赖版 ~250KB，需安装 .NET 8 桌面运行时
-    └── AirTools.exe
-```
-
-### 一键发布（推荐）
-
-```powershell
-cd AirTools
-.\publish.ps1
-```
-
-可选：`.\publish.ps1 -SelfContainedOnly` 或 `.\publish.ps1 -FrameworkDependentOnly` 只发布其中一个版本。
-
-### 手动发布
-
-```powershell
-cd AirTools
-
-# 自包含版
-dotnet publish src/AirTools/AirTools.csproj -c Release -o dist/self-contained
-
-# 框架依赖版
-dotnet publish src/AirTools/AirTools.csproj -c Release -p:SelfContained=false -p:RuntimeIdentifier=win-x64 -p:PublishSingleFile=true -o dist/framework-dependent
-```
-
-> **PDB 文件**：调试符号，用于崩溃堆栈。分发给用户时可删除。
-
-### 版本对比
-
-| 版本       | 体积      | 依赖                     |
-|------------|-----------|--------------------------|
-| 自包含     | ~63 MB    | 无，单 exe 即可运行      |
-| 框架依赖   | ~250 KB   | 需安装 .NET 8 桌面运行时 |
+致谢（交互与平台做法的参考，未复制源码）：[CopyQ](https://github.com/hluk/CopyQ)、[Ditto](https://github.com/sabrogden/Ditto)、[Flow Launcher](https://github.com/Flow-Launcher/Flow.Launcher)、[PowerToys](https://github.com/microsoft/PowerToys)、[WPF-UI](https://github.com/lepoco/wpfui)。

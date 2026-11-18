@@ -14,11 +14,30 @@ using Renci.SshNet;
 
 namespace AirTools.Services;
 
-public interface ITaskRunner { Task RunAsync(LaunchTask task); void Stop(string id); }
+public interface ITaskRunner { Task RunAsync(LaunchTask task); bool Stop(string id); }
 
 public sealed class TaskRunner : ITaskRunner, IDisposable
 {
     private readonly ConcurrentDictionary<string, CancellationTokenSource> _running = new();
+    // Every process we started per task. "End run" must kill these (whole tree); cancelling a token alone
+    // only stops waiting and leaves the user's script / program running.
+    private readonly ConcurrentDictionary<string, ConcurrentDictionary<int, Process>> _processes = new();
+    private void Track(string id, Process process, bool disposeOnExit)
+    {
+        try { if (process.HasExited) { if (disposeOnExit) process.Dispose(); return; } } catch { return; }
+        int pid = process.Id;
+        var set = _processes.GetOrAdd(id, _ => new());
+        set[pid] = process;
+        process.Exited += (_, _) =>
+        {
+            if (_processes.TryGetValue(id, out var current)) { current.TryRemove(pid, out _); if (current.IsEmpty) _processes.TryRemove(id, out _); }
+            if (disposeOnExit) process.Dispose();
+        };
+        try { process.EnableRaisingEvents = true; }
+        catch { set.TryRemove(pid, out _); if (set.IsEmpty) _processes.TryRemove(id, out _); }
+    }
+    private static void KillTree(Process process) { try { if (!process.HasExited) process.Kill(true); } catch { } }
+    public bool IsRunning(string id) => _running.ContainsKey(id) || _processes.ContainsKey(id);
     public event Action<string>? StatusChanged;
     public Action? SaveCredentials { get; set; }
     public static string Protect(string password) => password.Length == 0 ? "" : Convert.ToBase64String(ProtectedData.Protect(Encoding.UTF8.GetBytes(password), null, DataProtectionScope.CurrentUser));
@@ -39,12 +58,14 @@ public sealed class TaskRunner : ITaskRunner, IDisposable
             else if (task.Kind == LaunchKind.Program)
             {
                 var info = CreateProcess(task);
-                using var process = Process.Start(info) ?? throw new IOException("无法启动程序");
+                var process = Process.Start(info) ?? throw new IOException("无法启动程序");
+                Track(task.Id, process, disposeOnExit: true);
                 StatusChanged?.Invoke("已启动：" + task.Name);
             }
             else await RunTerminalAsync(task, cancel.Token);
         }
-        catch (OperationCanceledException) { StatusChanged?.Invoke(task.Name + " 已停止"); }
+        catch (OperationCanceledException) { StatusChanged?.Invoke(task.Name + " 已结束"); }
+        catch (Exception) when (cancel.IsCancellationRequested) { StatusChanged?.Invoke(task.Name + " 已结束"); }
         catch (Exception ex) { StatusChanged?.Invoke(task.Name + "：" + ex.Message); await Application.Current.Dispatcher.InvokeAsync(() => MessageBox.Show(ex.Message, task.Name, MessageBoxButton.OK, MessageBoxImage.Warning)); }
         finally { _running.TryRemove(task.Id, out _); cancel.Dispose(); }
     }
@@ -64,8 +85,10 @@ public sealed class TaskRunner : ITaskRunner, IDisposable
         var info = new ProcessStartInfo("powershell.exe") { UseShellExecute = true, WorkingDirectory = task.WorkingDirectory };
         info.ArgumentList.Add("-NoProfile"); info.ArgumentList.Add("-EncodedCommand"); info.ArgumentList.Add(Convert.ToBase64String(Encoding.Unicode.GetBytes(script)));
         using var process = Process.Start(info) ?? throw new IOException("无法启动终端");
+        Track(task.Id, process, disposeOnExit: false);
         StatusChanged?.Invoke("正在运行：" + task.Name);
-        // The visible terminal belongs to the user. App exit detaches, rather than terminating their script.
+        // App exit detaches rather than terminating the user's script, but an explicit "end run" kills it.
+        using var registration = token.Register(() => KillTree(process));
         await process.WaitForExitAsync(token);
         StatusChanged?.Invoke(task.Name + " · 退出码 " + process.ExitCode);
     }
@@ -141,6 +164,15 @@ public sealed class TaskRunner : ITaskRunner, IDisposable
         }
         finally { linked.Cancel(); if (ssh.IsConnected) ssh.Disconnect(); }
     }
-    public void Stop(string id) { if (_running.TryGetValue(id, out var cancel)) cancel.Cancel(); }
-    public void Dispose() { foreach (var cancel in _running.Values) cancel.Cancel(); }
+    /// <summary>Ends a running task: cancels the run and kills every process it started. Returns false if nothing was running.</summary>
+    public bool Stop(string id)
+    {
+        bool stopped = false;
+        if (_running.TryGetValue(id, out var cancel)) { try { cancel.Cancel(); stopped = true; } catch (ObjectDisposedException) { } }
+        if (_processes.TryGetValue(id, out var set))
+            foreach (var process in set.Values.ToArray()) { stopped = true; KillTree(process); }
+        return stopped;
+    }
+    // Detach on exit: cancelling tokens only; terminals the user may still be reading are left alone.
+    public void Dispose() { foreach (var cancel in _running.Values) { try { cancel.Cancel(); } catch (ObjectDisposedException) { } } }
 }

@@ -1,0 +1,80 @@
+name: Build, test and release
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          # 8.x builds and tests the app; 10.x builds the Command Palette extension.
+          dotnet-version: |
+            8.0.x
+            10.0.x
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Test
+        shell: pwsh
+        run: ./scripts/test.ps1
+
+      - name: Publish AirTools.exe (self-contained)
+        shell: pwsh
+        run: ./publish.ps1 -SelfContainedOnly
+
+      - name: Package Command Palette extension
+        shell: pwsh
+        run: ./scripts/package-extension.ps1
+
+      - name: Assemble release files
+        shell: pwsh
+        run: |
+          $version = if ($env:GITHUB_REF -like 'refs/tags/v*') { $env:GITHUB_REF_NAME } else { 'dev-' + $env:GITHUB_SHA.Substring(0, 7) }
+          New-Item -ItemType Directory -Force dist/release | Out-Null
+          # Portable zip: AirTools.exe + licenses + the extension zip, so "install to Command Palette" works offline.
+          Copy-Item dist/release/AirTools-Extension-x64.zip dist/self-contained/ -Force
+          Compress-Archive -Path dist/self-contained/* -DestinationPath "dist/release/AirTools-$version-win-x64.zip" -Force
+          Get-FileHash dist/release/*.zip -Algorithm SHA256 | ForEach-Object { "$($_.Hash.ToLower())  $(Split-Path $_.Path -Leaf)" } | Set-Content dist/release/SHA256SUMS.txt
+          Get-ChildItem dist/release | Format-Table Name, Length
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AirTools-windows-x64
+          path: dist/release/
+          if-no-files-found: error
+
+  release:
+    # Only for version tags like v1.0.0: attach the files to a GitHub Release.
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: AirTools-windows-x64
+          path: release
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" release/* \
+            --repo "$GITHUB_REPOSITORY" --title "AirTools $GITHUB_REF_NAME" --generate-notes

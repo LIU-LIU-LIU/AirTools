@@ -18,7 +18,7 @@ using AirTools.Tools.Clipboard.Services;
 
 namespace AirTools;
 
-public enum SearchMode { All, Clipboard, Files }
+public enum SearchMode { All, Clipboard }
 public sealed record SearchResult(string Title, string Subtitle, string Icon, object Value);
 public sealed class LauncherViewModel : ObservableObject
 {
@@ -48,7 +48,6 @@ public partial class LauncherWindow : Wpf.Ui.Controls.FluentWindow
         {
             if (_viewModel.Mode != SearchMode.All || Query.Text.Length != 0 || _composing) return;
             if (e.Text.Equals(_host.Settings.ClipboardModeKey, StringComparison.OrdinalIgnoreCase)) { SetMode(SearchMode.Clipboard); e.Handled = true; }
-            else if (e.Text.Equals(_host.Settings.FileModeKey, StringComparison.OrdinalIgnoreCase)) { SetMode(SearchMode.Files); e.Handled = true; }
         };
         IsVisibleChanged += (_, _) => { if (!IsVisible) _queryCancel?.Cancel(); };
         _host.Clipboard.ItemAdded += Clipboard_ItemAdded;
@@ -65,6 +64,7 @@ public partial class LauncherWindow : Wpf.Ui.Controls.FluentWindow
         // Get the destination monitor DPI rather than assuming the previous screen scale.
         NativeMethods.PositionLauncher(this, _target, screen);
         _shownAt = DateTime.UtcNow;
+        PlayEntrance();
         Show(); Activate(); Query.Focus();
         Dispatcher.BeginInvoke(() => { Activate(); Query.Focus(); Keyboard.Focus(Query); }, System.Windows.Threading.DispatcherPriority.Input);
         _ = UpdateAsync();
@@ -81,20 +81,30 @@ public partial class LauncherWindow : Wpf.Ui.Controls.FluentWindow
         Resources["SoftBorder"] = new SolidColorBrush(dark ? Color.FromArgb(24, 255, 255, 255) : Color.FromArgb(25, 80, 100, 130));
         UpdatePlaceholder();
     }
+    private void PlayEntrance()
+    {
+        // Spotlight-like arrival: slight drop + scale-up + fade, ~200 ms.
+        var ease = new System.Windows.Media.Animation.CubicEase { EasingMode = System.Windows.Media.Animation.EasingMode.EaseOut };
+        var duration = TimeSpan.FromMilliseconds(200);
+        Shell.BeginAnimation(OpacityProperty, new System.Windows.Media.Animation.DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(140)));
+        ShellScale.BeginAnimation(ScaleTransform.ScaleXProperty, new System.Windows.Media.Animation.DoubleAnimation(.97, 1, duration) { EasingFunction = ease });
+        ShellScale.BeginAnimation(ScaleTransform.ScaleYProperty, new System.Windows.Media.Animation.DoubleAnimation(.97, 1, duration) { EasingFunction = ease });
+        ShellShift.BeginAnimation(TranslateTransform.YProperty, new System.Windows.Media.Animation.DoubleAnimation(-8, 0, duration) { EasingFunction = ease });
+    }
     private void Dismiss() { Hide(); PasteHelper.RestoreForeground(_target); }
     private void SetMode(SearchMode mode)
     {
         _viewModel.Mode = mode; Query.Clear();
         ModeBadge.Visibility = mode == SearchMode.All ? Visibility.Collapsed : Visibility.Visible;
-        ModeText.Text = mode == SearchMode.Clipboard ? "剪切板" : "文件";
+        ModeText.Text = "剪切板";
         UpdatePlaceholder();
-        Hint.Text = mode == SearchMode.Clipboard ? "Enter 粘贴 · Ctrl+Enter 仅复制 · Ctrl+P 预览 · 空词 Backspace 返回" : mode == SearchMode.Files ? "Enter 打开 · Ctrl+D 收藏/取消收藏 · 空词 Backspace 返回" : "↑↓ 选择　 Enter 打开　 Esc 收起";
+        Hint.Text = mode == SearchMode.Clipboard ? "Enter 粘贴 · Ctrl+Enter 仅复制 · Ctrl+P 预览 · 空词 Backspace 返回" : "↑↓ 选择　 Enter 运行　 Esc 收起";
         _ = UpdateAsync();
     }
     private void UpdatePlaceholder()
     {
         if (SearchPlaceholder == null) return;
-        SearchPlaceholder.Text = _viewModel.Mode switch { SearchMode.Clipboard => "搜索剪切板历史…", SearchMode.Files => "搜索常用文件…", _ => $"搜索任务…   {_host.Settings.ClipboardModeKey} 剪切板  ·  {_host.Settings.FileModeKey} 文件" };
+        SearchPlaceholder.Text = _viewModel.Mode switch { SearchMode.Clipboard => "搜索剪切板历史…", _ => $"搜索快速命令…   输入 {_host.Settings.ClipboardModeKey} 搜索剪切板" };
         SearchPlaceholder.Visibility = string.IsNullOrEmpty(Query.Text) ? Visibility.Visible : Visibility.Collapsed;
     }
     private void Query_TextChanged(object sender, TextChangedEventArgs e) { UpdatePlaceholder(); if (_host != null && !_composing) _ = UpdateAsync(); }
@@ -109,13 +119,11 @@ public partial class LauncherWindow : Wpf.Ui.Controls.FluentWindow
             SearchResult[] values;
             if (mode == SearchMode.Clipboard)
                 values = _host.Clipboard.Search(query).Take(50).Select(x => new SearchResult(x.PreviewText, x.TimeDisplay + " · " + x.SizeDisplay, x.ItemType == ClipboardItemType.Image ? "▧" : "▤", x)).ToArray();
-            else if (mode == SearchMode.Files)
-                values = await Task.Run(() => _host.Files.Search(query, _host.Settings, token).Select(x => new SearchResult(Path.GetFileName(x), x, "▱", x)).ToArray(), token);
             else
             {
                 values = _host.Settings.Tasks.Select(x => new SearchResult(x.Name, x.Kind == LaunchKind.SshCapture ? $"SSH · {x.Username}@{x.Host} · {x.Interface}" : x.Executable + " " + string.Join(" ", x.Arguments), x.Icon, x))
                     .Prepend(new("剪切板管理器", "浏览、搜索和管理历史记录", "▤", "clipboard"))
-                    .Concat(new[] { new SearchResult("文件搜索", "常用目录、收藏与最近打开", "▱", "files"), new SearchResult("设置与快速启动", "任务、快捷键、搜索目录", "⚙", "settings"), new SearchResult("系统资源监控", "CPU、内存、磁盘和网络", "◴", "monitor") })
+                    .Concat(new[] { new SearchResult("设置", "快速命令、快捷键、剪切板与晾衣架", "⚙", "settings"), new SearchResult("系统资源监控", "CPU、内存、磁盘和网络", "◴", "monitor") })
                     .Select(x => (Item: x, Score: SearchRanking.Score(x.Title + " " + (x.Value is LaunchTask task ? task.Alias : ""), query)))
                     .Where(x => x.Score > 0).OrderByDescending(x => x.Score).Take(50).Select(x => x.Item).ToArray();
             }
@@ -136,8 +144,6 @@ public partial class LauncherWindow : Wpf.Ui.Controls.FluentWindow
         else if (e.Key is Key.Up or Key.Down) { if (Results.Items.Count > 0) { Results.SelectedIndex = Math.Clamp(Results.SelectedIndex + (e.Key == Key.Down ? 1 : -1), 0, Results.Items.Count - 1); Results.ScrollIntoView(Results.SelectedItem); } e.Handled = true; }
         else if (e.Key == Key.P && Keyboard.Modifiers == ModifierKeys.Control && Results.SelectedItem is SearchResult { Value: ClipboardItem image } && image.ItemType == ClipboardItemType.Image)
         { e.Handled = true; var bitmap = _host.Clipboard.GetImage(image); if (bitmap != null) { _executing = true; try { new ImageViewerWindow(bitmap) { Owner = this }.ShowDialog(); } finally { _executing = false; Query.Focus(); } } }
-        else if (e.Key == Key.D && Keyboard.Modifiers == ModifierKeys.Control && _viewModel.Mode == SearchMode.Files && Results.SelectedItem is SearchResult { Value: string path })
-        { e.Handled = true; if (!_host.Settings.Favorites.Remove(path)) _host.Settings.Favorites.Add(path); _host.Settings.Save(); Hint.Text = "已更新收藏：" + path; }
         else if (e.Key == Key.Enter) { e.Handled = true; await ExecuteAsync(); }
     }
     private async Task ExecuteAsync()
@@ -152,17 +158,9 @@ public partial class LauncherWindow : Wpf.Ui.Controls.FluentWindow
                 else { var error = await PasteHelper.PasteToTargetAsync(this, _target, () => _host.Clipboard.CopyToClipboardAsync(item)); if (error != null) _host.Notify(error); }
             }
             else if (result.Value is LaunchTask task) { Hide(); _ = _host.Runner.RunAsync(task); }
-            else if (_viewModel.Mode == SearchMode.Files && result.Value is string path)
-            {
-                Process.Start(new ProcessStartInfo(path) { UseShellExecute = true }); Hide();
-                _host.Settings.RecentFiles.Remove(path); _host.Settings.RecentFiles.Insert(0, path);
-                if (_host.Settings.RecentFiles.Count > 100) _host.Settings.RecentFiles.RemoveRange(100, _host.Settings.RecentFiles.Count - 100);
-                _host.Settings.Save();
-            }
             else switch (result.Value)
             {
                 case "clipboard": Hide(); _host.ShowClipboard(_target); break;
-                case "files": SetMode(SearchMode.Files); Query.Focus(); break;
                 case "settings": Hide(); _host.ShowSettings(); break;
                 case "monitor": Hide(); _host.ShowMonitor(); break;
             }

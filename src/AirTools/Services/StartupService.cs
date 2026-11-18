@@ -39,7 +39,7 @@ namespace AirTools.Services
                 if (string.IsNullOrEmpty(exePath) || !File.Exists(exePath))
                     return false;
 
-                using var key = Registry.CurrentUser.OpenSubKey(RegPath, true);
+                using var key = Registry.CurrentUser.CreateSubKey(RegPath, true);
                 if (key == null) return false;
 
                 if (enable)

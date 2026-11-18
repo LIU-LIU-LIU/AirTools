@@ -14,15 +14,16 @@ public sealed class GlobalHotkeys : IDisposable
     [DllImport("user32.dll", SetLastError = true)] private static extern bool RegisterHotKey(IntPtr hwnd, int id, uint modifiers, uint key);
     [DllImport("user32.dll")] private static extern bool UnregisterHotKey(IntPtr hwnd, int id);
     public GlobalHotkeys() => _source.AddHook(Hook);
-    public void Apply(IEnumerable<(string Gesture, Action Action)> bindings)
+    public IReadOnlyList<HotkeyRegistrationException> Apply(IEnumerable<(string Gesture, Action Action)> bindings, bool allowConflicts = false)
     {
-        var desired = new Dictionary<string, (uint Mods, uint Key, Action Action)>();
+        var desired = new Dictionary<string, (uint Mods, uint Key, Action Action, string Gesture)>();
+        var conflicts = new List<HotkeyRegistrationException>();
         foreach (var binding in bindings)
         {
             if (string.IsNullOrWhiteSpace(binding.Gesture)) continue;
             var parsed = HotkeyParser.Parse(binding.Gesture);
             var key = $"{parsed.Modifiers}:{parsed.Key}";
-            if (!desired.TryAdd(key, (parsed.Modifiers, parsed.Key, binding.Action))) throw new ArgumentException("快捷键重复：" + binding.Gesture);
+            if (!desired.TryAdd(key, (parsed.Modifiers, parsed.Key, binding.Action, binding.Gesture))) throw new ArgumentException("快捷键重复：" + binding.Gesture);
         }
         var added = new Dictionary<string, (int Id, Action Action)>();
         try
@@ -31,15 +32,25 @@ public sealed class GlobalHotkeys : IDisposable
             {
                 if (_active.ContainsKey(pair.Key)) continue;
                 var id = ++_nextId;
-                if (!RegisterHotKey(_source.Handle, id, pair.Value.Mods, pair.Value.Key)) throw new Win32Exception(Marshal.GetLastWin32Error(), "快捷键已被其他程序占用");
+                if (!RegisterHotKey(_source.Handle, id, pair.Value.Mods, pair.Value.Key))
+                {
+                    var error = new HotkeyRegistrationException(pair.Value.Mods, pair.Value.Key, new Win32Exception(Marshal.GetLastWin32Error(), "快捷键已被其他程序占用")) { Gesture = pair.Value.Gesture };
+                    if (!allowConflicts) throw error;
+                    conflicts.Add(error); continue;
+                }
                 added.Add(pair.Key, (id, pair.Value.Action));
             }
         }
         catch { foreach (var item in added.Values) UnregisterHotKey(_source.Handle, item.Id); throw; }
         foreach (var pair in _active) if (!desired.ContainsKey(pair.Key)) UnregisterHotKey(_source.Handle, pair.Value.Id);
         var next = new Dictionary<string, (int Id, Action Action)>();
-        foreach (var pair in desired) next[pair.Key] = (_active.TryGetValue(pair.Key, out var old) ? old.Id : added[pair.Key].Id, pair.Value.Action);
+        foreach (var pair in desired)
+        {
+            if (_active.TryGetValue(pair.Key, out var old)) next[pair.Key] = (old.Id, pair.Value.Action);
+            else if (added.TryGetValue(pair.Key, out var fresh)) next[pair.Key] = (fresh.Id, pair.Value.Action);
+        }
         _active = next;
+        return conflicts;
     }
     private IntPtr Hook(IntPtr hwnd, int msg, IntPtr wp, IntPtr lp, ref bool handled)
     {
@@ -47,4 +58,13 @@ public sealed class GlobalHotkeys : IDisposable
         return IntPtr.Zero;
     }
     public void Dispose() { foreach (var item in _active.Values) UnregisterHotKey(_source.Handle, item.Id); _source.RemoveHook(Hook); _source.Dispose(); }
+}
+
+public sealed class HotkeyRegistrationException : Win32Exception
+{
+    public uint Modifiers { get; }
+    public uint Key { get; }
+    public string Gesture { get; init; } = "";
+    public HotkeyRegistrationException(uint modifiers, uint key, Win32Exception inner) : base(inner.NativeErrorCode, inner.Message)
+    { Modifiers = modifiers; Key = key; }
 }

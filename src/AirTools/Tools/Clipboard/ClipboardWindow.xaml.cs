@@ -11,7 +11,7 @@ using AirTools.Tools.Clipboard.Services;
 
 namespace AirTools.Tools.Clipboard
 {
-    public partial class ClipboardWindow : Window
+    public partial class ClipboardWindow : Wpf.Ui.Controls.FluentWindow
     {
         private readonly ClipboardManagerService _clipManager;
         private readonly DispatcherTimer _refreshTimer;
@@ -38,7 +38,7 @@ namespace AirTools.Tools.Clipboard
             ApplyThemeFromParent();
             RefreshList();
             _refreshTimer.Start();
-            UpdateStatus($"正在监控剪切板... · {_appSettings.GetHotkeyDisplay()} 唤出");
+            UpdateStatus("正在记录剪切板");
         }
 
         /// <summary>从主窗口同步主题（AirTools 统一管理主题）</summary>
@@ -54,6 +54,7 @@ namespace AirTools.Tools.Clipboard
                 }
                 RefreshList();
             }
+            // Colours now come from the WPF-UI theme dictionaries, which follow the app theme automatically.
         }
 
         public void SetPreviousForegroundWindow(IntPtr hwnd) => _previousForegroundHwnd = hwnd;
@@ -70,11 +71,7 @@ namespace AirTools.Tools.Clipboard
             TxtSearch.Focus();
         }
 
-        private void TxtSearch_TextChanged(object sender, TextChangedEventArgs e)
-        {
-            SearchPlaceholder.Visibility = string.IsNullOrEmpty(TxtSearch.Text) ? Visibility.Visible : Visibility.Collapsed;
-            RefreshList();
-        }
+        private void TxtSearch_TextChanged(object sender, TextChangedEventArgs e) => RefreshList();
 
         private async void LstClipboard_MouseDoubleClick(object sender, MouseButtonEventArgs e)
         {
@@ -136,10 +133,11 @@ namespace AirTools.Tools.Clipboard
             }
         }
 
-        private void BtnShowPinned_Click(object sender, RoutedEventArgs e) { _currentFilter = _currentFilter == FilterMode.Pinned ? FilterMode.All : FilterMode.Pinned; RefreshList(); }
-        private void BtnShowText_Click(object sender, RoutedEventArgs e) { _currentFilter = _currentFilter == FilterMode.Text ? FilterMode.All : FilterMode.Text; RefreshList(); }
-        private void BtnShowImage_Click(object sender, RoutedEventArgs e) { _currentFilter = _currentFilter == FilterMode.Image ? FilterMode.All : FilterMode.Image; RefreshList(); }
-        private void BtnShowFiles_Click(object sender, RoutedEventArgs e) { _currentFilter = _currentFilter == FilterMode.Files ? FilterMode.All : FilterMode.Files; RefreshList(); }
+        private void BtnShowAll_Click(object sender, RoutedEventArgs e) { _currentFilter = FilterMode.All; RefreshList(); }
+        private void BtnShowPinned_Click(object sender, RoutedEventArgs e) { _currentFilter = FilterMode.Pinned; RefreshList(); }
+        private void BtnShowText_Click(object sender, RoutedEventArgs e) { _currentFilter = FilterMode.Text; RefreshList(); }
+        private void BtnShowImage_Click(object sender, RoutedEventArgs e) { _currentFilter = FilterMode.Image; RefreshList(); }
+        private void BtnShowFiles_Click(object sender, RoutedEventArgs e) { _currentFilter = FilterMode.Files; RefreshList(); }
 
         private void Window_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
         {
@@ -149,13 +147,12 @@ namespace AirTools.Tools.Clipboard
         private void BtnMinimize_Click(object sender, RoutedEventArgs e) => WindowState = WindowState.Minimized;
         private void BtnMaxRestore_Click(object sender, RoutedEventArgs e) => WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
 
-        private void Window_StateChanged(object sender, EventArgs e) => BtnMaxRestore.Content = WindowState == WindowState.Maximized ? "❐" : "□";
 
         private void BtnClose_Click(object sender, RoutedEventArgs e) => Close();
 
         private void BtnSettings_Click(object sender, RoutedEventArgs e)
         {
-            if (Application.Current is App app) { app.ShowLauncherSettings(); return; }
+            if (Application.Current is App app) { app.ShowLauncherSettings("剪切板历史"); return; }
             var settingsWin = new ClipboardSettingsWindow(_appSettings, s =>
             {
                 _appSettings = s;
@@ -194,16 +191,23 @@ namespace AirTools.Tools.Clipboard
             EmptyState.Visibility = list.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
             LstClipboard.Visibility = list.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
             TxtCount.Text = $"共 {_clipManager.Items.Count} 条 · 置顶 {_clipManager.Items.Count(x => x.IsPinned)} 条";
-
-            var activeBg = FindResource("AccentColor") as SolidColorBrush;
-            var normalBg = FindResource("BgCard") as SolidColorBrush;
-            BtnShowPinned.Background = _currentFilter == FilterMode.Pinned ? activeBg : normalBg;
-            BtnShowText.Background = _currentFilter == FilterMode.Text ? activeBg : normalBg;
-            BtnShowImage.Background = _currentFilter == FilterMode.Image ? activeBg : normalBg;
-            BtnShowFiles.Background = _currentFilter == FilterMode.Files ? activeBg : normalBg;
+            bool filtered = keyword.Length > 0 || _currentFilter != FilterMode.All;
+            EmptyTitle.Text = filtered ? "没有匹配的记录" : "还没有剪切板历史";
+            EmptyBody.Text = filtered ? "换个关键字，或切换到“全部”" : "复制文本、图片或文件后会出现在这里";
+            BtnShowAll.IsChecked = _currentFilter == FilterMode.All;
+            BtnShowPinned.IsChecked = _currentFilter == FilterMode.Pinned;
+            BtnShowText.IsChecked = _currentFilter == FilterMode.Text;
+            BtnShowImage.IsChecked = _currentFilter == FilterMode.Image;
+            BtnShowFiles.IsChecked = _currentFilter == FilterMode.Files;
         }
 
-        private void UpdateStatus(string text) => TxtStatus.Text = $"{text} · {_appSettings.GetHotkeyDisplay()} 唤出";
+        private void UpdateStatus(string text)
+        {
+            TxtStatus.Text = text;
+            // Brief pulse on the status dot so actions feel acknowledged.
+            var pulse = new System.Windows.Media.Animation.DoubleAnimation(.2, 1, TimeSpan.FromMilliseconds(420)) { EasingFunction = new System.Windows.Media.Animation.CubicEase() };
+            StatusDot.BeginAnimation(OpacityProperty, pulse);
+        }
 
         protected override void OnPreviewKeyDown(KeyEventArgs e)
         {

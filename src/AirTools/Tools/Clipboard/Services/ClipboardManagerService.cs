@@ -10,6 +10,7 @@ using System.Windows;
 using System.Windows.Media.Imaging;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Runtime.InteropServices;
 using AirTools.Tools.Clipboard.Models;
 
 namespace AirTools.Tools.Clipboard.Services
@@ -17,17 +18,64 @@ namespace AirTools.Tools.Clipboard.Services
     public class ClipboardManagerService : IDisposable
     {
         private readonly object _lock = new();
-        private bool _isSelfCopying;
+        private uint _selfSequence;
+        private uint _lastSequence;
+        private string? _pendingSelfText;
+        private DateTime _pendingSelfTextAt;
+        [DllImport("user32.dll")] private static extern uint GetClipboardSequenceNumber();
+        private readonly NativeTextClipboard _nativeTextClipboard = new();
         private readonly string _dataFilePath;
         private readonly System.Windows.Threading.DispatcherTimer _saveTimer = new() { Interval = TimeSpan.FromMilliseconds(400) };
         private readonly SemaphoreSlim _saveGate = new(1, 1);
         private Task _pendingSave = Task.CompletedTask;
         private readonly LinkedList<(string Id, BitmapSource Image)> _decoded = new();
-        public const long ImageBudget = 128L * 1024 * 1024;
+        public long ImageBudget { get; set; } = 128L * 1024 * 1024;
         public string? LastError { get; private set; }
         private bool _historyUnreadable;
 
         public int MaxHistoryCount { get; set; } = 500;
+        /// <summary>Unpinned items older than this many days are dropped; 0 keeps everything.</summary>
+        public int RetentionDays { get; set; }
+        public bool RecordImages { get; set; } = true;
+        public bool RecordFiles { get; set; } = true;
+        /// <summary>While paused nothing new is recorded (existing history stays).</summary>
+        public bool Paused { get; set; }
+
+        /// <summary>Applies user limits and trims existing history to them.</summary>
+        public void Configure(int maxItems, int retentionDays, bool recordImages, bool recordFiles, bool paused, int imageBudgetMb)
+        {
+            MaxHistoryCount = Math.Max(1, maxItems); RetentionDays = Math.Max(0, retentionDays);
+            RecordImages = recordImages; RecordFiles = recordFiles; Paused = paused;
+            ImageBudget = Math.Max(1, imageBudgetMb) * 1024L * 1024;
+            if (Enforce()) SaveHistory();
+        }
+
+        /// <summary>Drops expired and surplus unpinned items. Returns true if anything was removed.</summary>
+        public bool Enforce()
+        {
+            bool changed = false;
+            lock (_lock)
+            {
+                if (RetentionDays > 0)
+                {
+                    var cutoff = DateTime.Now.AddDays(-RetentionDays);
+                    foreach (var old in Items.Where(x => !x.IsPinned && x.CopyTime < cutoff).ToList()) { Items.Remove(old); changed = true; }
+                }
+                while (Items.Count > MaxHistoryCount)
+                {
+                    var last = Items.LastOrDefault(x => !x.IsPinned);
+                    if (last == null) break;
+                    Items.Remove(last); changed = true;
+                }
+                while (Items.Sum(x => x.ImageData?.LongLength ?? 0) > ImageBudget)
+                {
+                    var oldest = Items.LastOrDefault(x => !x.IsPinned && x.ItemType == ClipboardItemType.Image);
+                    if (oldest == null) break;
+                    Items.Remove(oldest); changed = true;
+                }
+            }
+            return changed;
+        }
         public ObservableCollection<ClipboardItem> Items { get; } = new();
         public event EventHandler<ClipboardItem>? ItemAdded;
 
@@ -42,14 +90,16 @@ namespace AirTools.Tools.Clipboard.Services
 
         public void HandleClipboardChange()
         {
-            if (_isSelfCopying) return;
+            uint sequence = GetClipboardSequenceNumber();
+            if (sequence != 0 && (sequence == _selfSequence || sequence == _lastSequence)) { if (sequence == _selfSequence) _pendingSelfText = null; return; }
             LastError = null;
+            if (Paused) { _lastSequence = sequence; return; }
 
             try
             {
                 ClipboardItem? item = null;
 
-                if (System.Windows.Clipboard.ContainsImage())
+                if (RecordImages && System.Windows.Clipboard.ContainsImage())
                 {
                     var image = System.Windows.Clipboard.GetImage();
                     if (image == null) return;
@@ -57,7 +107,7 @@ namespace AirTools.Tools.Clipboard.Services
 
                     var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(image));
                     using var memory = new MemoryStream(); encoder.Save(memory); var bytes = memory.ToArray();
-                    if (bytes.LongLength > ImageBudget) { LastError = "图片超过 128 MB 内存预算，未加入历史"; return; }
+                    if (bytes.LongLength > ImageBudget) { LastError = $"图片超过 {ImageBudget / 1024 / 1024} MB 内存预算，未加入历史（可在设置 → 剪切板历史中调高）"; return; }
                     while (Items.Sum(x => x.ImageData?.LongLength ?? 0) + bytes.LongLength > ImageBudget)
                     {
                         var oldest = Items.LastOrDefault(x => !x.IsPinned && x.ItemType == ClipboardItemType.Image);
@@ -81,6 +131,15 @@ namespace AirTools.Tools.Clipboard.Services
                 {
                     var text = System.Windows.Clipboard.GetText();
                     if (string.IsNullOrWhiteSpace(text)) return;
+                    // WM_CLIPBOARDUPDATE can be queued before SetClipboardData
+                    // returns. Consume our own write by content as a race-safe
+                    // second guard; it prevents a rack redraw loop.
+                    if (_pendingSelfText != null && DateTime.UtcNow - _pendingSelfTextAt < TimeSpan.FromSeconds(2) && text == _pendingSelfText)
+                    {
+                        _pendingSelfText = null;
+                        _lastSequence = sequence;
+                        return;
+                    }
 
                     var hash = ComputeHash(text);
                     lock (_lock)
@@ -92,6 +151,8 @@ namespace AirTools.Tools.Clipboard.Services
                             existing.CopyTime = DateTime.Now;
                             InsertAfterPinned(existing);
                             SaveHistory();
+                            _lastSequence = sequence;
+                            ItemAdded?.Invoke(this, existing);
                             return;
                         }
                     }
@@ -104,7 +165,7 @@ namespace AirTools.Tools.Clipboard.Services
                         CopyTime = DateTime.Now
                     };
                 }
-                else if (System.Windows.Clipboard.ContainsFileDropList())
+                else if (RecordFiles && System.Windows.Clipboard.ContainsFileDropList())
                 {
                     var fileList = System.Windows.Clipboard.GetFileDropList();
                     var fileArray = new string[fileList.Count];
@@ -122,16 +183,9 @@ namespace AirTools.Tools.Clipboard.Services
 
                 if (item != null)
                 {
-                    lock (_lock)
-                    {
-                        InsertAfterPinned(item);
-                        while (Items.Count > MaxHistoryCount)
-                        {
-                            var last = Items.LastOrDefault(x => !x.IsPinned);
-                            if (last != null) Items.Remove(last);
-                            else break;
-                        }
-                    }
+                    _lastSequence = sequence;
+                    lock (_lock) InsertAfterPinned(item);
+                    Enforce();
                     ItemAdded?.Invoke(this, item);
                     SaveHistory();
                 }
@@ -182,11 +236,12 @@ namespace AirTools.Tools.Clipboard.Services
         {
             try
             {
-                _isSelfCopying = true;
                 switch (item.ItemType)
                 {
                     case ClipboardItemType.Text:
-                        System.Windows.Clipboard.SetText(item.Text);
+                        _pendingSelfText = item.Text;
+                        _pendingSelfTextAt = DateTime.UtcNow;
+                        _nativeTextClipboard.Write(item.Text);
                         break;
                     case ClipboardItemType.Image:
                         var image = GetImage(item);
@@ -203,15 +258,10 @@ namespace AirTools.Tools.Clipboard.Services
                         break;
                 }
                 LastError = null;
+                _selfSequence = GetClipboardSequenceNumber();
                 return true;
             }
             catch (Exception ex) { LastError = ex.Message; return false; }
-            finally
-            {
-                System.Windows.Threading.Dispatcher.CurrentDispatcher.BeginInvoke(
-                    new Action(() => _isSelfCopying = false),
-                    System.Windows.Threading.DispatcherPriority.ApplicationIdle);
-            }
         }
 
         public void TogglePin(ClipboardItem item)
@@ -242,6 +292,29 @@ namespace AirTools.Tools.Clipboard.Services
                 foreach (var i in unpinned) Items.Remove(i);
             }
             SaveHistory();
+        }
+
+        /// <summary>Explicit, repeat-safe import. Never overwrites either source or an unreadable destination.</summary>
+        public int ImportHistory(string source)
+        {
+            if (_historyUnreadable) throw new IOException("当前历史无法读取，请先备份修复，导入未执行");
+            var json = File.ReadAllText(source);
+            var imported = JsonSerializer.Deserialize<List<SerializableItem>>(json) ?? throw new IOException("历史文件为空");
+            var backup = Path.Combine(Path.GetDirectoryName(_dataFilePath)!, "Imports"); Directory.CreateDirectory(backup);
+            File.WriteAllText(Path.Combine(backup, DateTime.Now.ToString("yyyyMMdd-HHmmss-fff") + ".json"), json);
+            int count = 0;
+            foreach (var item in imported.OrderByDescending(x => x.CopyTime))
+            {
+                if (item.ItemType != ClipboardItemType.Text || string.IsNullOrWhiteSpace(item.Text)) continue;
+                var hash = ComputeHash(item.Text);
+                if (Items.Any(x => x.ItemType == ClipboardItemType.Text && x.Text == item.Text)) continue;
+                Items.Add(new ClipboardItem { ItemType = ClipboardItemType.Text, Text = item.Text, ContentHash = hash, IsPinned = item.IsPinned, CopyTime = item.CopyTime });
+                count++;
+            }
+            var ordered = Items.OrderByDescending(x => x.IsPinned).ThenByDescending(x => x.CopyTime).ToArray();
+            for (int i = 0; i < ordered.Length; i++) Items.Move(Items.IndexOf(ordered[i]), i);
+            Enforce(); // after sorting, so the oldest unpinned items are the ones trimmed
+            SaveHistory(); return count;
         }
 
         public IEnumerable<ClipboardItem> Search(string keyword)
@@ -318,7 +391,7 @@ namespace AirTools.Tools.Clipboard.Services
             catch (Exception ex) { _historyUnreadable = true; LastError = "历史文件无法读取，已保护原文件：" + ex.Message; }
         }
 
-        public void Dispose() { _saveTimer.Stop(); QueueSave(); _pendingSave.GetAwaiter().GetResult(); _decoded.Clear(); }
+        public void Dispose() { _saveTimer.Stop(); QueueSave(); _pendingSave.GetAwaiter().GetResult(); _decoded.Clear(); _nativeTextClipboard.Dispose(); }
 
         private class SerializableItem
         {

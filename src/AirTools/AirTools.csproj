@@ -26,6 +26,7 @@
 
   <ItemGroup>
     <Resource Include="Assets/AirTools.ico" />
+    <ProjectReference Include="../AirTools.Core/AirTools.Core.csproj" />
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
     <PackageReference Include="WPF-UI" Version="3.0.5" />
     <PackageReference Include="SSH.NET" Version="2026.0.0" />

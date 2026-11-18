@@ -1,0 +1,18 @@
+AirTools
+Copyright 2026 AirTools contributors
+Licensed under the Apache License, Version 2.0.
+
+AirTools distributes the following third-party components under their own licenses:
+- WPF-UI 3.0.5: MIT, https://github.com/lepoco/wpfui
+- CommunityToolkit.Mvvm 8.4.0: MIT, https://github.com/CommunityToolkit/dotnet
+- SSH.NET 2026.0.0: MIT, https://github.com/sshnet/SSH.NET
+- BouncyCastle.Cryptography 2.7.0: MIT, https://github.com/bcgit/bc-csharp
+- Microsoft.Extensions.DependencyInjection.Abstractions 8.0.2 and
+  Microsoft.Extensions.Logging.Abstractions 8.0.3: MIT, https://github.com/dotnet/runtime
+- System.Security.Cryptography.ProtectedData 8.0.0: MIT, https://github.com/dotnet/runtime
+- .NET and Windows Desktop runtime (self-contained distribution):
+  MIT and third-party notices, https://github.com/dotnet/runtime,
+  https://github.com/dotnet/wpf, https://github.com/dotnet/winforms
+
+Dependency copyright notices and license texts are included in licenses/.
+These components are not relicensed under AirTools' Apache-2.0 license.

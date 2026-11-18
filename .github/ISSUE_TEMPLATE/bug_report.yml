@@ -1,0 +1,26 @@
+name: Bug report
+description: 遇到了问题
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: 发生了什么？
+      description: 你做了什么、期望什么、实际看到什么。截图很有帮助。
+    validations: { required: true }
+  - type: input
+    id: version
+    attributes:
+      label: AirTools 版本
+      description: 设置 → 常规 里可以看到。
+  - type: input
+    id: os
+    attributes:
+      label: Windows 版本
+      placeholder: Windows 11 23H2
+  - type: textarea
+    id: log
+    attributes:
+      label: 日志（可选）
+      description: "崩溃日志在 `%LOCALAPPDATA%\\AirTools\\Logs\\crash.log`，粘贴相关片段即可（不含剪切板内容）。"
+      render: text

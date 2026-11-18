@@ -1,14 +1,21 @@
-# 构建产物
+# Build output
 bin/
 obj/
 dist/
 publish/
-publish-fxd/
 
-# Visual Studio
+# IDE
 .vs/
+.vscode/
+.idea/
 *.user
 *.suo
 
-# Rider
-.idea/
+# Local validation output
+*.log
+!licenses/**
+
+# Secrets and signing material: never commit
+*.pfx
+*.snk
+*.password

@@ -24,11 +24,31 @@ namespace AirTools.Tools.SystemMonitor
             _monitor.NetworkAdapterId = _settings.NetworkAdapterId;
             _timer.Interval = TimeSpan.FromMilliseconds(_settings.UpdateIntervalMs);
             _timer.Tick += Timer_Tick;
+            // Always-on-top utility: clicking or dragging it must not pull focus from the app being typed into.
+            SourceInitialized += (_, _) => AirTools.Tools.Clipboard.Services.NonActivatingWindow.Apply(this);
+        }
+
+        /// <summary>Raised when the user picks "设置" in the bar's context menu; the host opens the unified settings page.</summary>
+        public event Action? SettingsRequested;
+
+        /// <summary>Applies new settings live (called after settings are saved).</summary>
+        public void ApplySettings(MonitorSettings s)
+        {
+            _settings = s;
+            _monitor.UpdateIntervalMs = s.UpdateIntervalMs;
+            _monitor.DiskDrive = s.DiskDrive;
+            _monitor.NetworkAdapterId = s.NetworkAdapterId;
+            _timer.Interval = TimeSpan.FromMilliseconds(s.UpdateIntervalMs); // previously only read once at startup
+            Opacity = s.WindowOpacity;
+            ApplyVisibility();
+            ApplyLayoutDensity();
+            PositionWindow();
         }
 
         private void Window_Loaded(object sender, RoutedEventArgs e)
         {
             Opacity = _settings.WindowOpacity;
+            MainBorder.BeginAnimation(OpacityProperty, new System.Windows.Media.Animation.DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(260)));
             ApplyVisibility();
             ApplyLayoutDensity();
             PositionWindow();
@@ -40,20 +60,15 @@ namespace AirTools.Tools.SystemMonitor
         {
             var isRelaxed = _settings.LayoutDensity == "Relaxed";
             // 紧凑: 更小内边距和间距; 宽松: 更大内边距和间距
-            MainBorder.Padding = isRelaxed ? new Thickness(8, 6, 8, 6) : new Thickness(4, 2, 4, 2);
-            var itemGapH = isRelaxed ? 14.0 : 6.0;   // 横向项间距
+            MainBorder.Padding = isRelaxed ? new Thickness(10, 6, 10, 6) : new Thickness(6, 3, 6, 3);
+            var itemGapH = isRelaxed ? 14.0 : 8.0;   // 横向项间距
             var itemGapV = isRelaxed ? 8.0 : 4.0;    // 竖向项间距
-            var netGapV = isRelaxed ? 6.0 : 2.0;     // 网络子项间距
 
             // 竖向布局
             GridCpuV.Margin = new Thickness(0, 0, 0, itemGapV);
             GridMemV.Margin = new Thickness(0, 0, 0, itemGapV);
             GridDiskV.Margin = new Thickness(0, 0, 0, itemGapV);
-            if (PanelNetV.Children.Count >= 2)
-            {
-                if (PanelNetV.Children[0] is FrameworkElement tb) tb.Margin = new Thickness(0, 0, 0, netGapV);
-                if (PanelNetV.Children[1] is FrameworkElement g1) g1.Margin = new Thickness(0, 0, 0, netGapV);
-            }
+            GridNetUpV.Margin = new Thickness(0, 0, 0, itemGapV);
 
             // 横向布局
             var mH = new Thickness(0, 0, itemGapH, 0);
@@ -95,7 +110,16 @@ namespace AirTools.Tools.SystemMonitor
             var w = ActualWidth;
             var h = ActualHeight;
 
-            Left = _settings.Position switch { 
+            if (_settings.Left is double savedLeft && _settings.Top is double savedTop && double.IsFinite(savedLeft) && double.IsFinite(savedTop))
+            {
+                // User-dragged position: keep it, but never let it sit (partly) off every screen.
+                double minX = SystemParameters.VirtualScreenLeft, minY = SystemParameters.VirtualScreenTop;
+                double maxX = minX + SystemParameters.VirtualScreenWidth - w, maxY = minY + SystemParameters.VirtualScreenHeight - h;
+                Left = Math.Clamp(savedLeft, minX, Math.Max(minX, maxX)); Top = Math.Clamp(savedTop, minY, Math.Max(minY, maxY));
+                return;
+            }
+
+            Left = _settings.Position switch {
                 "BottomLeft" => workArea.Left + margin, 
                 "TopRight" => workArea.Right - w - margin, 
                 "TopLeft" => workArea.Left + margin, 
@@ -326,14 +350,53 @@ namespace AirTools.Tools.SystemMonitor
             return $"{bytesPerSec:F1}{units[i]}";
         }
 
-        private void Window_MouseLeftButtonDown(object sender, MouseButtonEventArgs e) { if (e.ChangedButton == MouseButton.Left) DragMove(); }
+        // ---- drag with magnetic snapping (hold Shift or Ctrl to move freely) ----
+        private bool _dragging;
+        private Point _dragMouse; private double _dragLeft, _dragTop;
 
-        private void Window_MouseRightButtonUp(object sender, MouseButtonEventArgs e) 
-        { 
-            // Handled by ContextMenu now
+        private void Bar_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+        {
+            _dragging = true; _dragMouse = PointToScreen(e.GetPosition(this)); _dragLeft = Left; _dragTop = Top;
+            MainBorder.CaptureMouse(); e.Handled = true;
         }
 
-        private void MenuItem_Settings_Click(object sender, RoutedEventArgs e) => ShowSettings();
+        private void Bar_MouseMove(object sender, MouseEventArgs e)
+        {
+            if (!_dragging || e.LeftButton != MouseButtonState.Pressed) return;
+            var p = PointToScreen(e.GetPosition(this)); var dpi = VisualTreeHelper.GetDpi(this);
+            double left = _dragLeft + (p.X - _dragMouse.X) / dpi.DpiScaleX, top = _dragTop + (p.Y - _dragMouse.Y) / dpi.DpiScaleY;
+            bool free = (Keyboard.Modifiers & (ModifierKeys.Shift | ModifierKeys.Control)) != 0;
+            // The visible bar sits inside a 10 px transparent margin; snap the visible edge, not the window edge.
+            const double inset = 10;
+            var area = WorkAreaAt(p, dpi);
+            var snap = SnapService.Snap(left + inset, top + inset, ActualWidth - 2 * inset, ActualHeight - 2 * inset, area, enabled: !free);
+            Left = snap.Left - inset; Top = snap.Top - inset;
+        }
+
+        private void Bar_MouseLeftButtonUp(object sender, MouseButtonEventArgs e) { if (_dragging) { MainBorder.ReleaseMouseCapture(); e.Handled = true; } }
+
+        private void Bar_LostMouseCapture(object sender, MouseEventArgs e)
+        {
+            if (!_dragging) return;
+            _dragging = false;
+            if (Math.Abs(Left - _dragLeft) < 1 && Math.Abs(Top - _dragTop) < 1) return;
+            // Remember where the user put it. Reload first so unrelated edits made in settings meanwhile are not lost.
+            var latest = MonitorSettings.Load(); latest.Left = Left; latest.Top = Top; latest.Save();
+            _settings.Left = Left; _settings.Top = Top;
+        }
+
+        private static Rect WorkAreaAt(Point screenPx, DpiScale dpi)
+        {
+            var wa = System.Windows.Forms.Screen.FromPoint(new System.Drawing.Point((int)screenPx.X, (int)screenPx.Y)).WorkingArea;
+            return new Rect(wa.Left / dpi.DpiScaleX, wa.Top / dpi.DpiScaleY, wa.Width / dpi.DpiScaleX, wa.Height / dpi.DpiScaleY);
+        }
+
+        private void MenuItem_Settings_Click(object sender, RoutedEventArgs e) => SettingsRequested?.Invoke();
+        private void MenuItem_ResetPosition_Click(object sender, RoutedEventArgs e)
+        {
+            var latest = MonitorSettings.Load(); latest.Left = null; latest.Top = null; latest.Save();
+            _settings.Left = null; _settings.Top = null; PositionWindow();
+        }
         private void MenuItem_Close_Click(object sender, RoutedEventArgs e) => Close();
 
         private void Window_Closing(object sender, System.ComponentModel.CancelEventArgs e)
@@ -342,20 +405,5 @@ namespace AirTools.Tools.SystemMonitor
             _monitor.Dispose();
         }
 
-        public void ShowSettings()
-        {
-            var settingsWin = new MonitorSettingsWindow(_settings, s =>
-            {
-                _settings = s;
-                _monitor.UpdateIntervalMs = s.UpdateIntervalMs;
-                _monitor.DiskDrive = s.DiskDrive;
-                _monitor.NetworkAdapterId = s.NetworkAdapterId;
-                Opacity = s.WindowOpacity;
-                ApplyVisibility();
-                ApplyLayoutDensity();
-                PositionWindow();
-            }) { Owner = this };
-            settingsWin.ShowDialog();
-        }
     }
 }

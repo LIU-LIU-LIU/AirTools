@@ -18,6 +18,9 @@ namespace AirTools.Tools.SystemMonitor.Models
         public string Orientation { get; set; } = "Horizontal";
         public string LayoutDensity { get; set; } = "Compact";
         public bool UseColorGradient { get; set; } = true;
+        /// <summary>Position after the user dragged the bar (screen DIPs). Null = use the <see cref="Position"/> corner.</summary>
+        public double? Left { get; set; }
+        public double? Top { get; set; }
 
         public static MonitorSettings Load()
         {
@@ -45,8 +48,8 @@ namespace AirTools.Tools.SystemMonitor.Models
 
         private static string GetSettingsPath()
         {
-            var appData = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "AirTools", "SystemMonitor");
-            return Path.Combine(appData, "settings.json");
+            // Same folder as before by default (%LOCALAPPDATA%\AirTools); now also honours AIRTOOLS_DATA_DIRECTORY.
+            return Path.Combine(AirTools.Services.LauncherSettings.DataDirectory, "SystemMonitor", "settings.json");
         }
     }
 }
